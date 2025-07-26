@@ -1,6 +1,2 @@
 streamlit
-openai-whisper
-transformers
-torch
-TTS
-soundfile
+requests
