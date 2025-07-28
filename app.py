@@ -1,49 +1,53 @@
 import streamlit as st
 import requests
 import os
+import tempfile
 
-# Hugging Face Whisper API URL
+# Set Hugging Face token securely via environment variable
+HF_TOKEN = os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    st.error("Hugging Face token not found. Please set HF_TOKEN as an environment variable.")
+    st.stop()
+
 API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large"
-HF_TOKEN = st.secrets["HF_TOKEN"]  # Securely fetch token from secrets
 
 headers = {
     "Authorization": f"Bearer {HF_TOKEN}"
 }
 
+# Function to transcribe audio
 def transcribe_audio(audio_bytes):
-    response = requests.post(API_URL, headers=headers, data=audio_bytes)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
 
-    if response.status_code != 200:
-        return {"error": f"API Error: {response.status_code} - {response.text}"}
+    with open(tmp_path, "rb") as f:
+        data = f.read()
+    
+    response = requests.post(API_URL, headers=headers, data=data)
 
     try:
         return response.json()
     except requests.exceptions.JSONDecodeError:
-        return {"error": "Failed to decode JSON. Response: " + response.text}
+        return {"error": "Invalid response from Hugging Face API."}
 
+# Streamlit UI
+st.title("🎙️ Voice to Text - Whisper API")
+st.markdown("Upload an audio file (wav/mp3/m4a)")
 
-def main():
-    st.set_page_config(page_title="Audio Transcriber", page_icon="🎙️")
-    st.title("🎙️ Audio Transcriber using Whisper API")
-    st.write("Upload an audio file and get the transcription using OpenAI's Whisper model hosted on Hugging Face.")
+uploaded_file = st.file_uploader("Drag and drop file here", type=["wav", "mp3", "m4a"])
 
-    audio_file = st.file_uploader("Upload Audio", type=["wav", "mp3", "m4a"])
+if uploaded_file:
+    file_bytes = uploaded_file.read()
 
-    if audio_file is not None:
-        st.audio(audio_file, format='audio/wav')
+    with st.spinner("Transcribing audio..."):
+        result = transcribe_audio(file_bytes)
 
-        with st.spinner("Transcribing..."):
-            audio_bytes = audio_file.read()
-            result = transcribe_audio(audio_bytes)
-
-            if "error" in result:
-                st.error(result["error"])
-            else:
-                st.success("✅ Transcription complete!")
-                st.markdown("**Transcription Output:**")
-                st.write(result.get("text", "No text returned."))
-
-
-if __name__ == "__main__":
-    main()
+    if "text" in result:
+        st.success("Transcription complete!")
+        st.write(result["text"])
+    elif "error" in result:
+        st.error(f"Error: {result['error']}")
+    else:
+        st.error("An unknown error occurred.")
 
